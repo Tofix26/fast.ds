@@ -1,47 +1,72 @@
-import { APIMessage } from "discord-api-types/v10";
-import { User } from "./User";
-import { Client } from "./Client";
-import { TextChannel, MessageOptions } from "./TextChannel";
-import axios from "axios";
+import { APIMessage } from "https://raw.githubusercontent.com/discordjs/discord-api-types/main/deno/v10.ts";
+import { Client } from "./Client.ts";
+import { TextChannel, MessageOptions } from "./TextChannel.ts";
+import { User } from "./User.ts";
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export class Message {
 	user: User;
 	content: string;
 	channelID: string;
-	public id: string;
+	id: string;
 	private client: Client;
-	constructor(message: APIMessage, client: Client) {
-		this.id = message.id;
-		this.user = new User(message.author);
-		this.content = message.content;
-		this.channelID = message.channel_id;
+	constructor(data: APIMessage, client: Client) {
+		this.id = data.id;
+		this.user = new User(data.author);
+		this.content = data.content;
+		this.channelID = data.channel_id;
 		this.client = client;
 	}
-
 	public get channel(): TextChannel {
-		return this.client.cache.channels.get(this.channelID) as TextChannel;
+		return this.client.Cache.channels.get(this.channelID) as TextChannel;
 	}
 	public async reply(MessageOptions: MessageOptions | string) {
 		switch (typeof MessageOptions) {
-			case "string":
-				await axios({
-					method: "POST",
-					url: `https://discord.com/api/v10/channels/${this.channelID}/messages`,
-					data: {
-						content: MessageOptions,
-						message_reference: {
-							channel_id: this.channelID,
-							message_id: this.id,
-							guild_id: this.channel.guildID,
+			case "string": {
+				const res = await fetch(
+					`https://discord.com/api/v10/channels/${this.channelID}/messages`,
+					{
+						method: "POST",
+						body: JSON.stringify({
+							content: MessageOptions,
+							message_reference: {
+								channel_id: this.channelID,
+								message_id: this.id,
+								guild_id: this.channel.guildID,
+							},
+						}),
+						headers: {
+							"User-Agent": "axios/fast.ds",
+							Authorization: `Bot ${this.client.token}`,
+							"Content-Type": "application/json",
 						},
-					},
-					headers: {
-						"User-Agent": "axios/fast.ds",
-						Authorization: `Bot ${this.client.token}`,
-						"Content-Type": "application/json",
-					},
-				});
+					}
+				);
+				console.log(res.status);
+				if (res.status === 429) {
+					await sleep((await res.json())["retry_after"] * 1000);
+					await fetch(
+						`https://discord.com/api/v10/channels/${this.channelID}/messages`,
+						{
+							method: "POST",
+							body: JSON.stringify({
+								content: MessageOptions,
+								message_reference: {
+									channel_id: this.channelID,
+									message_id: this.id,
+									guild_id: this.channel.guildID,
+								},
+							}),
+							headers: {
+								Authorization: `Bot ${this.client.token}`,
+								"user-agent": "axios/discord.js",
+								"Content-Type": "application/json",
+							},
+						}
+					);
+				}
 				break;
-			case "object":
+			}
+			case "object": {
 				let allowedMentions = ["roles", "everyone", "users"];
 				if (MessageOptions.disabledMentions) {
 					if (MessageOptions.disabledMentions.everyone)
@@ -52,10 +77,11 @@ export class Message {
 						allowedMentions = allowedMentions.filter((e) => e !== "users");
 				}
 				if (!MessageOptions.tts) MessageOptions.tts = false;
-				await axios
-					.post(
-						`https://discord.com/api/v10/channels/${this.channelID}/messages`,
-						{
+				const res = await fetch(
+					`https://discord.com/api/v10/channels/${this.channelID}/messages`,
+					{
+						method: "POST",
+						body: JSON.stringify({
 							allowed_mentions: { parse: allowedMentions },
 							content: MessageOptions.content,
 							tts: MessageOptions.tts,
@@ -64,19 +90,40 @@ export class Message {
 								message_id: this.id,
 								guild_id: this.channel.guildID,
 							},
+						}),
+						headers: {
+							Authorization: `Bot ${this.client.token}`,
+							"user-agent": "axios/discord.js",
+							"Content-Type": "application/json",
 						},
+					}
+				);
+				if (res.status === 429) {
+					await sleep((await res.json())["retry_after"] * 1000);
+					await fetch(
+						`https://discord.com/api/v10/channels/${this.channelID}/messages`,
 						{
+							method: "POST",
+							body: JSON.stringify({
+								allowed_mentions: { parse: allowedMentions },
+								content: MessageOptions.content,
+								tts: MessageOptions.tts,
+								message_reference: {
+									channel_id: this.channelID,
+									message_id: this.id,
+									guild_id: this.channel.guildID,
+								},
+							}),
 							headers: {
 								Authorization: `Bot ${this.client.token}`,
 								"user-agent": "axios/discord.js",
 								"Content-Type": "application/json",
 							},
 						}
-					)
-					.catch((error) =>
-						console.error(error.response.data.errors.allowed_mentions.parse[1])
 					);
+				}
 				break;
+			}
 		}
 	}
 }

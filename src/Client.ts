@@ -1,12 +1,12 @@
-import axios from "axios";
-import { APIUser, APIMessage } from "discord-api-types/v10";
-import { Message } from "./Message";
-import { WebSocket } from "ws";
-import os from "node:os";
-import { CacheManager } from "./CacheManager";
-import EventEmitter from "node:events";
-import { BaseChannel } from "./BaseChannel";
-import { TextChannel } from "./TextChannel";
+import {
+	APIMessage,
+	APIUser,
+} from "https://raw.githubusercontent.com/discordjs/discord-api-types/main/deno/v10.ts";
+import { EventEmitter } from "https://deno.land/x/event_emitter@1.0.0/mod.ts";
+import { BaseChannel } from "./BaseChannel.ts";
+import { Message } from "./Message.ts";
+import { CacheManager } from "./CacheManager.ts";
+import { TextChannel } from "./TextChannel.ts";
 interface gateway {
 	url: string;
 	shards: number;
@@ -17,44 +17,49 @@ interface gateway {
 		max_concurrency: number;
 	};
 }
-
+interface ClientOptions {
+	maxListeners?: number;
+}
 export declare interface Client {
 	on(event: "messageCreate", listener: (message: Message) => void): this;
 	on(event: "ready", listener: () => void): this;
 	on(event: "channelCreate", listener: (channel: BaseChannel) => void): this;
 }
-export class Client extends EventEmitter {
-	token: string = "";
+// deno-lint-ignore no-explicit-any
+export class Client extends EventEmitter<any> {
+	token = "";
 	user: APIUser = {} as APIUser;
 	ws: WebSocket = {} as WebSocket;
-	cache: CacheManager = {} as CacheManager;
-	constructor() {
-		super({ captureRejections: true });
+	Cache: CacheManager = new CacheManager(this);
+	constructor(options: ClientOptions) {
+		super(options.maxListeners);
 	}
-	async login(Token: string) {
-		this.token = Token;
-		const res = await axios.get("https://discord.com/api/v10/gateway/bot", {
+	async login(token: string) {
+		this.token = token;
+
+		const res = await fetch("https://discord.com/api/v10/gateway/bot", {
+			method: "GET",
 			headers: {
 				Authorization: `Bot ${this.token}`,
-				"user-agent": "axios/discord.js",
+				"user-agent": "fast.ds",
 			},
 		});
 		if (res.status !== 200) {
 			throw new Error(`${res.status} ${res.statusText}`);
 		}
-		const data = res.data as gateway;
+		const data = (await res.json()) as gateway;
 		const ws = new WebSocket(data.url + "/?v=9&encoding=json");
 		let interval = 0;
 		let s: null | number = null;
 		this.ws = ws;
-		ws.on("open", () => {
+		ws.onopen = () => {
 			ws.send(
 				JSON.stringify({
 					op: 2,
 					d: {
 						token: this.token,
 						properties: {
-							$os: os.platform(),
+							$os: Deno.build.os,
 							$browser: "axios/fast.ds",
 							$device: "axios/fast.ds",
 						},
@@ -62,9 +67,10 @@ export class Client extends EventEmitter {
 					},
 				})
 			);
-		});
-		ws.on("message", async (e) => {
-			let data = JSON.parse(e.toString());
+		};
+		ws.onmessage = async (message) => {
+			let { data } = message;
+			data = JSON.parse(data);
 			s = data.s;
 			if (data.op === 11) return;
 			if (data.op === 10) {
@@ -81,25 +87,21 @@ export class Client extends EventEmitter {
 			switch (data.t) {
 				case "READY":
 					this.user = data.d.user;
-					this.cache = await new CacheManager(this);
-					await this.cache.refresh();
-					setTimeout(() => {
-						this.emit("ready");
-					}, 1000);
+					await this.Cache.refresh();
+					this.emit("ready");
 					break;
 				case "MESSAGE_CREATE":
 					this.emit("messageCreate", new Message(data.d as APIMessage, this));
 					break;
 				case "CHANNEL_CREATE":
 					if (data.d.type === 0) {
-						this.cache.channels.set(data.d.id, new TextChannel(data.d, this));
-						console.log(this.cache.channels.get(data.d.id));
+						this.Cache.channels.set(data.d.id, new TextChannel(data.d, this));
 					} else {
-						this.cache.channels.set(data.d.id, new BaseChannel(data.d, this));
+						this.Cache.channels.set(data.d.id, new BaseChannel(data.d, this));
 					}
 					this.emit("channelCreate", new BaseChannel(data, this));
 					break;
 			}
-		});
+		};
 	}
 }

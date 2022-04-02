@@ -1,8 +1,11 @@
-import { TextChannel } from "./TextChannel";
-import { APIGuild, APIChannel, APITextChannel } from "discord-api-types/v10";
-import { Client } from "./Client";
-import axios from "axios";
-import { BaseChannel } from "./BaseChannel";
+import {
+	APIChannel,
+	APIGuild,
+} from "https://raw.githubusercontent.com/discordjs/discord-api-types/main/deno/v10.ts";
+import { BaseChannel } from "./BaseChannel.ts";
+import { Client } from "./Client.ts";
+import { TextChannel } from "./TextChannel.ts";
+
 export class CacheManager {
 	channels: Map<string, BaseChannel> = new Map();
 	private client: Client;
@@ -11,15 +14,15 @@ export class CacheManager {
 		this.client = client;
 	}
 	public async cacheGuilds() {
-		let data = await axios.get("https://discord.com/api/v10/users/@me/guilds", {
+		const res = await fetch("https://discord.com/api/v10/users/@me/guilds", {
 			headers: {
 				Authorization: `Bot ${this.client.token}`,
 				"User-agent": "axios/fast.ds",
 				encoding: "json",
 			},
 		});
-		let guilds: Map<string, APIGuild> = new Map();
-		for (const guild of data.data) {
+		const guilds: Map<string, APIGuild> = new Map();
+		for (const guild of await res.json()) {
 			guilds.set(guild.id, guild);
 		}
 		return guilds;
@@ -27,7 +30,7 @@ export class CacheManager {
 	public async cacheChannels() {
 		let channels: APIChannel[] = [] as APIChannel[];
 		for (const guild of Array.from(this.guilds.values())) {
-			let data = await axios.get(
+			const data = await fetch(
 				`https://discord.com/api/v10/guilds/${guild.id}/channels`,
 				{
 					headers: {
@@ -37,10 +40,10 @@ export class CacheManager {
 					},
 				}
 			);
-			channels = [...channels, ...data.data];
+			channels = [...channels, ...(await data.json())];
 		}
-		let Channels: Map<string, BaseChannel> = new Map();
-		for (let channel of channels) {
+		const Channels: Map<string, BaseChannel> = new Map();
+		for (const channel of channels) {
 			if (channel.type === 0) {
 				Channels.set(channel.id, new TextChannel(channel, this.client));
 				continue;

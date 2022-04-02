@@ -1,7 +1,6 @@
-import { APITextChannel } from "discord-api-types/v10";
-import axios from "axios";
-import { Client } from "./Client";
-import { BaseChannel } from "./BaseChannel";
+import { APITextChannel } from "https://raw.githubusercontent.com/discordjs/discord-api-types/main/deno/v10.ts";
+import { BaseChannel } from "./BaseChannel.ts";
+import { Client } from "./Client.ts";
 export interface MessageOptions {
 	content?: string;
 	tts?: boolean;
@@ -15,30 +14,31 @@ export interface MessageOptions {
 }
 export class TextChannel extends BaseChannel {
 	guildID: string;
-	nsfw: boolean
 	constructor(data: APITextChannel, client: Client) {
 		super(data, client);
-		this.guildID = data.guild_id;
-		this.nsfw = data.nsfw
+		this.guildID = data.guild_id as string;
 	}
 	public async send(MessageOptions: MessageOptions | string) {
 		switch (typeof MessageOptions) {
-			case "string":
-				await axios({
-					method: "POST",
-					url: `https://discord.com/api/v10/channels/${this.id}/messages`,
-					data: {
-						content: MessageOptions,
-					},
-					headers: {
-						"User-Agent": "axios/fast.ds",
-						//@ts-ignore bruhv
-						Authorization: `Bot ${this.client.token}`,
-						"Content-Type": "application/json",
-					},
-				});
+			case "string": {
+				await fetch(
+					`https://discord.com/api/v10/channels/${this.id}/messages`,
+					{
+						method: "POST",
+						body: JSON.stringify({
+							content: MessageOptions,
+						}),
+						headers: {
+							"User-Agent": "axios/fast.ds",
+							//@ts-ignore bruhv
+							Authorization: `Bot ${this.client.token}`,
+							"Content-Type": "application/json",
+						},
+					}
+				);
 				break;
-			case "object":
+			}
+			case "object": {
 				let allowedMentions = ["roles", "everyone", "users"];
 				if (MessageOptions.disabledMentions) {
 					if (MessageOptions.disabledMentions.everyone)
@@ -51,27 +51,25 @@ export class TextChannel extends BaseChannel {
 				console.log(allowedMentions);
 
 				if (!MessageOptions.tts) MessageOptions.tts = false;
-				await axios
-					.post(
-						`https://discord.com/api/v10/channels/${this.id}/messages`,
-						{
+				await fetch(
+					`https://discord.com/api/v10/channels/${this.id}/messages`,
+					{
+						method: "POST",
+						body: JSON.stringify({
 							allowed_mentions: { parse: allowedMentions },
 							content: MessageOptions.content,
 							tts: MessageOptions.tts,
+						}),
+						headers: {
+							// @ts-ignore bruv
+							Authorization: `Bot ${this.client.token}`,
+							"user-agent": "axios/discord.js",
+							"Content-Type": "application/json",
 						},
-						{
-							headers: {
-								//@ts-ignore bruv
-								Authorization: `Bot ${this.client.token}`,
-								"user-agent": "axios/discord.js",
-								"Content-Type": "application/json",
-							},
-						}
-					)
-					.catch((error) =>
-						console.error(error.response.data.errors.allowed_mentions.parse[1])
-					);
+					}
+				);
 				break;
+			}
 		}
 	}
 }

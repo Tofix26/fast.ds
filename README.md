@@ -1,2 +1,2 @@
-# fast.ds
+# deno.ds
  
